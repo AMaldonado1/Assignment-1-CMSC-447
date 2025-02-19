@@ -41,6 +41,22 @@ CREATE_TABLES = {f"{TABLE_NAMES[0]}": f"""CREATE TABLE {TABLE_NAMES[0]}
 	    ON DELETE CASCADE	 
 	);"""}
 
+def delete_database(cursor):
+    choice = input("Are you sure? Delete the whole database? (Y/N)")
+    if choice.strip().upper() != "Y":
+        print("Delete failed.")
+        return False
+    try:
+        # If they agree to delete, and it works, database is removed
+        cursor.execute(f"DROP DATABASE {DATABASE_NAME};")
+        cursor.connection.commit()
+        print("Delete successful!")
+        return True
+
+    except pymysql.err.OperationalError:
+        print("Delete failed.")
+        return False
+
 
 def show_table(cursor, table_index):
     # Get all the columns/entities of the given table
@@ -217,6 +233,7 @@ def delete_all(cursor):
             cursor.execute(f"DELETE FROM {table[0]};")
             cursor.connection.commit()
         print("Delete successful!")
+        return
 
     except pymysql.err.OperationalError:
         print("Delete failed.")
@@ -298,6 +315,7 @@ def main_menu(cursor):
     2. Remove entry
     3. Delete all entries (Tables are kept)
     4. Exit database
+    5. Delete and Exit database
     """
     print(menu)
     command = input(">> ")
@@ -312,6 +330,9 @@ def main_menu(cursor):
             delete_all(cursor)
         case "4":
             return True
+        case "5":
+            if delete_database(cursor):
+                return True
         case _:
             print("Invalid option.")
 
