@@ -10,30 +10,29 @@ FIND_DATABASE = (f"{DATABASE_NAME}",)
 TABLE_NAMES = ("student", "instructor", "course", "enrollment")
 FIND_TABLES = ((f"{TABLE_NAMES[0]}",), (f"{TABLE_NAMES[1]}",), (f"{TABLE_NAMES[2]}",), (f"{TABLE_NAMES[3]}",))
 CREATE_TABLES = {f"{TABLE_NAMES[0]}": f"""CREATE TABLE {TABLE_NAMES[0]}
-    (student_id     VARCHAR(10), 
+    (student_id     INT AUTO_INCREMENT, 
 	 name           VARCHAR(20), 
 	 credits        NUMERIC(3,0) CHECK (credits > 0),
 	 PRIMARY KEY (student_id)
-	);""",
+	) AUTO_INCREMENT=0;""",
                  f"{TABLE_NAMES[1]}": f"""CREATE TABLE {TABLE_NAMES[1]}
-    (instructor_id      VARCHAR(10), 
+    (instructor_id      INT AUTO_INCREMENT, 
 	 name               VARCHAR(20), 
 	 department         VARCHAR(20),
 	 PRIMARY KEY (instructor_id)
-	);""",
+	) AUTO_INCREMENT=0;""",
                  f"{TABLE_NAMES[2]}": f"""CREATE TABLE {TABLE_NAMES[2]}
-    (course_id          VARCHAR(10), 
-	 instructor_id      VARCHAR(10), 
+    (course_id          INT AUTO_INCREMENT, 
+	 instructor_id      INT, 
 	 name               VARCHAR(20),
 	 credits            NUMERIC(3,0) CHECK (credits > 0),
 	 PRIMARY KEY (course_id),
 	 FOREIGN KEY (instructor_id) REFERENCES {TABLE_NAMES[1]}(instructor_id)
 	    ON DELETE SET null
-	);""",
+	) AUTO_INCREMENT=0;""",
                  f"{TABLE_NAMES[3]}": f"""CREATE TABLE {TABLE_NAMES[3]}
-    (course_id          VARCHAR(10), 
-	 student_id         VARCHAR(10), 
-	 semester           ENUM('Winter', 'Spring', 'Summer', 'Fall'),
+    (course_id          INT, 
+	 student_id         INT, 
 	 year               YEAR,
 	 PRIMARY KEY (course_id, student_id),
 	 FOREIGN KEY (course_id) REFERENCES {TABLE_NAMES[2]}(course_id)
@@ -61,7 +60,7 @@ def show_table(cursor, table_index):
 
 def view_table(cursor):
     view_table_menu = f"""
-        Please choose a table(s) by space number
+        Please choose a table(s) by number and space
         (ex: "2 4") to view both {TABLE_NAMES[1]} and {TABLE_NAMES[3]}
         or choose all:
         0. all
@@ -69,10 +68,13 @@ def view_table(cursor):
         2. {TABLE_NAMES[1]}
         3. {TABLE_NAMES[2]}
         4. {TABLE_NAMES[3]}
+        5. Go back
         """
     print(view_table_menu)
     command = input(">> ")
     # Take their command, remove duplicates, sort and invalid input
+    if "5" in command:
+        return
     command = sorted({item.strip() for item in command.split() if item.strip() in ("0", "1", "2", "3", "4")})
     try:
         if not command:
@@ -95,12 +97,111 @@ def view_table(cursor):
         return
 
 
+def add_entry_full(cursor, table_index):
+    # Get the full list of attributes to insert
+    cursor.execute(f"SHOW COLUMNS FROM {TABLE_NAMES[table_index]}")
+    all_attributes = cursor.fetchall()
+    usable_attributes = [attribute[0] for attribute in all_attributes if "PRI" not in attribute[3]]
+    attributes_type = [attribute[1] for attribute in all_attributes if "PRI" not in attribute[3]]
+    complete_attributes = [f"{usable_attributes[i]} ({attributes_type[i]})" for i in range(len(attributes_type))]
+    msg = f"""
+    To add a(n) {TABLE_NAMES[table_index]} entry, type in each value for each attribute separate by comma space.
+    Attribute(s): {", ".join(complete_attributes)}
+    """
+    print(msg)
+    command = input(">> ")
+    # Convert inputted attributes to correct type
+    finished_command = []
+    for attribute_type, attribute_name in zip(attributes_type, command.split(", ")):
+        if attribute_type != "varchar(20)":
+            finished_command.append(int(attribute_name))
+        else:
+            finished_command.append(attribute_name)
+    # Add parameters by number of attributes
+    total_attributes = []
+    for i in range(len(usable_attributes)):
+        total_attributes.append("%s")
+    insert_parameters = f"({", ".join(total_attributes)})"
+    # Insert the row to the table
+    insert = f"INSERT INTO {TABLE_NAMES[table_index]} ({", ".join(usable_attributes)}) VALUES " + insert_parameters
+    cursor.execute(insert, finished_command)
+    cursor.connection.commit()
+    return
+
+
 def add_entry(cursor):
-    print("Adding new entry/row")
+    add_entry_menu = f"""
+        Please choose an option:
+        0. Add {TABLE_NAMES[0]} entry
+        1. Add {TABLE_NAMES[1]} entry
+        2. Go back
+        """
+    print(add_entry_menu)
+    command = input(">> ").strip()
+    match command:
+        case "0" | "1":
+            try:
+                add_entry_full(cursor, int(command))
+            except (pymysql.err.OperationalError, TypeError, ValueError):
+                print("Unable to add entry.")
+                return
+        case "2":
+            return
+        case _:
+            print("Invalid option.")
+            return
+    return
+
+def remove_entry_full(cursor, table_index):
+    # Get the full list of attributes to remove
+    cursor.execute(f"SHOW COLUMNS FROM {TABLE_NAMES[table_index]}")
+    all_attributes = cursor.fetchall()
+    primary_attributes = [attribute[0] for attribute in all_attributes if "PRI" in attribute]
+    primary_attributes_types = [attribute[1] for attribute in all_attributes if "PRI" in attribute]
+    complete_attributes = [f"{primary_attributes[i]} ({primary_attributes_types[i]})" for i in range(len(primary_attributes_types))]
+    # Show rows to remove
+    show_table(cursor, table_index)
+    msg = f"""
+        To remove a(n) {TABLE_NAMES[table_index]} entry, type in IDs/Primary Key(s) value from the entry separate by comma space.
+        Primary Key(s): {", ".join(complete_attributes)}
+        """
+    print(msg)
+    command = input(">> ")
+    finished_command = [int(value.strip()) for value in command.split(", ")]
+    # Add parameters by number of attributes
+    total_attributes = []
+    for i in range(len(finished_command)):
+        total_attributes.append("%s")
+    remove_parameters = f"({", ".join(total_attributes)})"
+    # Remove the row to the table
+    remove = f"DELETE FROM {TABLE_NAMES[table_index]} WHERE ({", ".join(primary_attributes)}) IN " + remove_parameters
+    cursor.execute(remove, finished_command)
+    cursor.connection.commit()
+    return
 
 
 def remove_entry(cursor):
-    print("Removing old entry/row")
+    remove_entry_menu = f"""
+            Please choose an option:
+            0. Remove {TABLE_NAMES[0]} entry
+            1. Remove {TABLE_NAMES[1]} entry
+            2. Go back
+            """
+    print(remove_entry_menu)
+    command = input(">> ").strip()
+    match command:
+        case "0" | "1":
+            try:
+                remove_entry_full(cursor, int(command))
+            except (pymysql.err.OperationalError, TypeError, ValueError):
+                print("Unable to remove entry.")
+                return
+        case "2":
+            return
+        case _:
+            print("Invalid option.")
+            return
+    return
 
 
 def delete_all(cursor):
@@ -192,24 +293,24 @@ def create_connection():
 def main_menu(cursor):
     menu = """
     Please choose an option:
-    1. View tables
-    2. Add entry
-    3. Remove entry
-    4. Delete all entries (Tables are kept)
-    5. Exit database
+    0. View tables
+    1. Add entry
+    2. Remove entry
+    3. Delete all entries (Tables are kept)
+    4. Exit database
     """
     print(menu)
     command = input(">> ")
     match command:
-        case "1":
+        case "0":
             view_table(cursor)
-        case "2":
+        case "1":
             add_entry(cursor)
-        case "3":
+        case "2":
             remove_entry(cursor)
-        case "4":
+        case "3":
             delete_all(cursor)
-        case "5":
+        case "4":
             return True
         case _:
             print("Invalid option.")
