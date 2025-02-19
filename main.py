@@ -346,6 +346,7 @@ def main():
     # Simple CLI CRUD
     run_crud_app(cursor)
     # Close the MySQL server
+    cursor.close()
     mysql_server.close()
 
 
